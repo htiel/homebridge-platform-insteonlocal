@@ -2,7 +2,7 @@
   "private": false,
   "displayName": "InsteonLocal",
   "name": "homebridge-platform-insteonlocal",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "description": "Insteon platform plugin with local control for homebridge: https://github.com/nfarina/homebridge",
   "license": "ISC",
   "repository": {
@@ -13,8 +13,8 @@
     "url": "https://github.com/kuestess/homebridge-platform-insteonlocal/issues"
   },
   "engines": {
-    "node": ">=12.13.0",
-    "homebridge": ">=1.3.0"
+    "node": ">=20.0",
+    "homebridge": ">=1.8.0 || >=2.0.0"
   },
   "main": "dist/index.js",
   "scripts": {
@@ -46,5 +46,8 @@
     "rimraf": "^3.0.2",
     "ts-node": "^9.1.1",
     "typescript": "^4.2.2"
+  },
+  "overrides": {
+    "serialport": ">=12.0.0"
   }
 }

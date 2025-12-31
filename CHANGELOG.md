@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.5.12] - 2025-12-31
+### Enhanced
+- Added `override` feature (see README)
+- Added override for the `serialport` package to hopefully fix some install issues
+- Merged (#333) from @rasod for full Homebridge 2.0 compatibility.  Note that you will need to upgrade your Node.js version to at least v20.0.
+
 ## [0.5.11] - 2023-09-19
 ### Fixed
 - Fix for target keypads feature (#300)

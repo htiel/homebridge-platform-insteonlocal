@@ -39,6 +39,7 @@ Edit the config.json (see example) to fit your installation - configuration para
   - `port`:  port from Insteon app
   - `model`: model number of your hub.  Valid values are 2242, 2245, 2243, or PLM
   - `refresh`: device status refresh interval in seconds (disabled by default, set to 0 to disable polling)
+  - `override`: set to true to override checks on current device state (helpful if you have multiple Hubs and difficulty keeping device status in sync, default: false)
   - `use_express`: true or false to enable/disable Express server
   - `server_port`: port for local Express server
 
