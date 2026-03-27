@@ -1947,8 +1947,12 @@ class InsteonUI {
                 break;
             case '/saveHubSettings':
                 if (req.method == 'POST') {
+                    const hubChunks = [];
                     req.on('data', (chunk) => {
-                        const receivedData = chunk.toString();
+                        hubChunks.push(chunk);
+                    });
+                    req.on('end', () => {
+                        const receivedData = Buffer.concat(hubChunks).toString();
                         const arr = receivedData.split('&');
                         this.config.platforms[this.platformIndex].user =
                             this.stripEscapeCodes(arr[0].replace('hubUsername=', ''));
@@ -1966,8 +1970,6 @@ class InsteonUI {
                             this.stripEscapeCodes(arr[6].replace('hubKeepalive=', ''));
                         this.saveConfig(res);
                     });
-                    res.redirect('/hub');
-                    //req.on('end', function (chunk) { })
                 }
                 else {
                     this.log('[405] ' + req.method + ' to ' + req.url);
@@ -1975,8 +1977,12 @@ class InsteonUI {
                 break;
             case '/saveDeviceSettings':
                 if (req.method == 'POST') {
+                    const devSettChunks = [];
                     req.on('data', (chunk) => {
-                        const receivedData = chunk.toString();
+                        devSettChunks.push(chunk);
+                    });
+                    req.on('end', () => {
+                        const receivedData = Buffer.concat(devSettChunks).toString();
                         const arr = receivedData.split('&');
                         const deviceName = arr[0].replace('name=', '');
                         const referer = req.header('Referer');
@@ -1986,9 +1992,6 @@ class InsteonUI {
                         });
                         this.insteonJSON.devices[devIndex].name = deviceName;
                         this.saveInsteonConfig(res);
-                    });
-                    req.on('end', (chunk) => {
-                        //donothing
                     });
                 }
                 else {
@@ -2028,8 +2031,12 @@ class InsteonUI {
                 break;
             case '/saveInsteonConnectImport':
                 if (req.method == 'POST') {
+                    const csvChunks = [];
                     req.on('data', (chunk) => {
-                        const body = chunk.toString();
+                        csvChunks.push(chunk);
+                    });
+                    req.on('end', () => {
+                        const body = Buffer.concat(csvChunks).toString();
                         const csvParam = body.split('csvData=')[1];
                         if (!csvParam) {
                             res.writeHead(400);
@@ -2083,11 +2090,14 @@ class InsteonUI {
                 break;
             case '/linkToHub':
                 if (req.method == 'POST') {
+                    const linkChunks = [];
                     req.on('data', (chunk) => {
-                        const receivedData = chunk.toString();
-                        let arr = receivedData.split('&');
-                        arr = this.stripEscapeCodes(arr[0].replace('deviceID=', ''));
-                        const deviceIDs = arr.split(',');
+                        linkChunks.push(chunk);
+                    });
+                    req.on('end', () => {
+                        const receivedData = Buffer.concat(linkChunks).toString();
+                        const deviceIDStr = this.stripEscapeCodes(receivedData.split('&')[0].replace('deviceID=', ''));
+                        const deviceIDs = deviceIDStr.split(',');
                         const _linkToHub = (devices) => {
                             if (devices.length == 0) {
                                 sse.emit('push', { message: 'Finished linking devices' });
@@ -2127,14 +2137,15 @@ class InsteonUI {
                 break;
             case '/unlinkFromHub':
                 if (req.method == 'POST') {
+                    const unlinkChunks = [];
                     req.on('data', (chunk) => {
-                        const receivedData = chunk.toString();
+                        unlinkChunks.push(chunk);
+                    });
+                    req.on('end', () => {
+                        const receivedData = Buffer.concat(unlinkChunks).toString();
                         const arr = receivedData.split('&');
                         const deviceID = arr[0].replace('deviceID=', '');
                         this.unlinkFromHub(deviceID, res);
-                    });
-                    req.on('end', (chunk) => {
-                        //do nothing
                     });
                 }
                 else {
@@ -2143,8 +2154,12 @@ class InsteonUI {
                 break;
             case '/createScene':
                 if (req.method == 'POST') {
-                    req.on('data', (data) => {
-                        const receivedData = JSON.parse(data.toString());
+                    const sceneChunks = [];
+                    req.on('data', (chunk) => {
+                        sceneChunks.push(chunk);
+                    });
+                    req.on('end', () => {
+                        const receivedData = JSON.parse(Buffer.concat(sceneChunks).toString());
                         const sceneData = [];
                         for (let i = 0; i < receivedData.id.length; i++) {
                             sceneData.push({
@@ -2333,8 +2348,12 @@ class InsteonUI {
                 break;
             case '/saveConfigDeviceSettings':
                 if (req.method == 'POST') {
+                    const cfgDevChunks = [];
                     req.on('data', (chunk) => {
-                        const receivedData = this.stripEscapeCodes(chunk);
+                        cfgDevChunks.push(chunk);
+                    });
+                    req.on('end', () => {
+                        const receivedData = this.stripEscapeCodes(Buffer.concat(cfgDevChunks));
                         const arr = receivedData.split('&');
                         this.log('Got device data: ' + util_1.default.inspect(arr));
                         const devJSON = [];
@@ -2389,9 +2408,6 @@ class InsteonUI {
                         });
                         this.log('Config to save: [credentials redacted]');
                         this.saveConfig(res);
-                    });
-                    req.on('end', (chunk) => {
-                        //do nothing
                     });
                 }
                 else {
