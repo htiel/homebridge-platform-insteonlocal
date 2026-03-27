@@ -2948,7 +2948,9 @@ export class InsteonUI {
 
             this.generateDeviceConfig(id, res, (error, devConf, res) => {
               if (devConf) {
-                this.addDeviceToConfig(devConf, res, () => { addedCount++; });
+                this.addDeviceToConfig(devConf, res, () => {
+                  addedCount++;
+                });
               }
               setTimeout(() => {
                 return _addAllDevs();
@@ -4188,6 +4190,7 @@ export class InsteonUI {
           _generateDeviceConfig();
         }
       });
+    }
 
     addDeviceToConfig(devConf, res, callback) {
       const configDevice = this.devices.filter((item) => {
