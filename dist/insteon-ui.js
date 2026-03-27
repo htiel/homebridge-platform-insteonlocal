@@ -2456,11 +2456,7 @@ class InsteonUI {
                     const id = devIDs.shift();
                     sse.emit('push', { message: 'Adding ' + id + ' to config' });
                     this.generateDeviceConfig(id, res, (error, devConf, res) => {
-                        if (error) {
-                            this.log('Error - could not generate device config for ' + id);
-                            sse.emit('push', { message: 'Error generating config for ' + id });
-                        }
-                        else {
+                        if (devConf) {
                             this.addDeviceToConfig(devConf, res, () => { addedCount++; });
                         }
                         setTimeout(() => {
@@ -3462,6 +3458,26 @@ class InsteonUI {
             return item.deviceID == deviceID;
         });
         theDevice = theDevice[0];
+        // Build device config from whatever info is available — never fail,
+        // just omit deviceType if we can't determine it.
+        const _buildConf = (deviceType) => {
+            const devConf = {};
+            devConf.name = theDevice.name || theDevice.deviceID;
+            devConf.deviceID = theDevice.deviceID;
+            if (deviceType) {
+                devConf.deviceType = deviceType;
+                switch (deviceType) {
+                    case 'dimmer':
+                    case 'lightbulb':
+                        devConf.dimmable = 'yes';
+                        break;
+                    case 'switch':
+                        devConf.dimmable = 'no';
+                        break;
+                }
+            }
+            callback(null, devConf, res);
+        };
         const _generateDeviceConfig = () => {
             const filtered = this.deviceDatabase.filter((item) => {
                 return item.category == theDevice.info.deviceCategory.id;
@@ -3469,103 +3485,97 @@ class InsteonUI {
             const found = filtered.find((item) => {
                 return item.subcategory == theDevice.info.deviceSubcategory.id;
             });
-            const hkDeviceType = found.deviceType;
-            const devConf = {};
-            devConf.name = theDevice.name || theDevice.deviceID;
-            devConf.deviceID = theDevice.deviceID;
-            devConf.deviceType = hkDeviceType;
-            switch (devConf.deviceType) {
-                case 'dimmer':
-                case 'lightbulb':
-                    devConf.dimmable = 'yes';
-                    break;
-                case 'switch':
-                    devConf.dimmable = 'no';
-                    break;
-            }
-            callback(null, devConf, res);
+            _buildConf(found ? found.deviceType : undefined);
         };
-        if (typeof theDevice.info === 'undefined' ||
-            typeof theDevice.info.deviceCategory === 'undefined') {
-            this.getDeviceInfo(theDevice.deviceID, res, (error, info) => {
-                if (typeof theDevice.info === 'undefined') {
-                    //devInfo error callback broken
-                    this.log('Could not get device info for ' + theDevice.deviceID);
-                    error = new Error('Could not get device info');
-                    callback(error, null, res);
-                }
-                else {
-                    _generateDeviceConfig();
-                }
-            });
+        // 1. Use deviceType already stored in insteonJSON (e.g. from CSV import)
+        const insteonDev = Array.isArray(this.insteonJSON.devices)
+            ? this.insteonJSON.devices.find((d) => d.deviceID === deviceID)
+            : null;
+        if (insteonDev && insteonDev.deviceType) {
+            this.log('Using cached deviceType for ' + deviceID + ': ' + insteonDev.deviceType);
+            _buildConf(insteonDev.deviceType);
+            return;
         }
-        else {
+        // 2. Use hub info already in memory
+        if (theDevice.info && typeof theDevice.info.deviceCategory !== 'undefined') {
             this.log('Already have device info for ' + deviceID);
             _generateDeviceConfig();
+            return;
         }
-    }
-    addDeviceToConfig(devConf, res, callback) {
-        const configDevice = this.devices.filter((item) => {
-            return item.deviceID == devConf.deviceID;
+        // 3. Try to query hub — if it fails, still add device without type
+        this.getDeviceInfo(theDevice.deviceID, res, (error, info) => {
+            if (typeof theDevice.info === 'undefined') {
+                this.log('Could not get device info for ' + theDevice.deviceID + ', adding without type');
+                _buildConf(undefined);
+            }
+            else {
+                _generateDeviceConfig();
+            }
         });
-        if (configDevice.length != 0) {
-            this.log('Device already in config, not adding.');
-            callback(res);
+        addDeviceToConfig(devConf, res, callback);
+        {
+            const configDevice = this.devices.filter((item) => {
+                return item.deviceID == devConf.deviceID;
+            });
+            if (configDevice.length != 0) {
+                this.log('Device already in config, not adding.');
+                callback(res);
+            }
+            else {
+                this.log('Device not found in config, adding ' + devConf.name + '.');
+                this.config.platforms[this.platformIndex].devices.push(devConf);
+                callback(res);
+            }
         }
-        else {
-            this.log('Device not found in config, adding ' + devConf.name + '.');
-            this.config.platforms[this.platformIndex].devices.push(devConf);
-            callback(res);
-        }
-    }
-    getScripts() {
-        this.addDevRow =
-            '<script>' +
-                '$("#add").click(function() {' +
-                '$("#devTable").append("' +
-                this.deviceTemplate +
-                '");' +
-                '$("#devConfigForm").validator("update");' +
-                '});' +
-                '</>';
-        this.addSceneRow =
-            '<script>' +
-                '$("#addScene").click(function() {' +
-                '$("#sceneTemplate").append("' +
-                this.sceneTemplate +
-                '");' +
-                '$("#sceneTemplate").validator("update");' +
-                '});' +
-                '</script>';
-        this.validator =
-            '<script src="https://cdnjs.cloudflare.com/ajax/libs/1000hz-bootstrap-validator/0.11.9/validator.min.js"></script>';
-        this.dataTable =
-            '<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.12/js/jquery.dataTables.min.js"></script>' +
-                '<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.12/js/dataTables.bootstrap.min.js"></script>' +
+        getScripts();
+        {
+            this.addDevRow =
                 '<script>' +
-                '$(document).ready(function() {' +
-                '$(\'#linkTable\').DataTable({\'pageLength\': 25, \'responsive\': true, \'retrieve\': true});' +
-                '});' +
-                '</script>';
-        this.buttonAnimation =
-            '<script>' +
-                '$(\'.btn.load\').on(\'click\', function() {' +
-                'var $this = $(this);' +
-                '$this.button(\'loading\');' +
-                'setTimeout(function() {' +
-                '$this.button(\'reset\');' +
-                '}, 300000);' +
-                '});' +
-                '</script>';
-        this.listHighlight =
-            '<script>' +
-                '$(\'.list-group-item\').on(\'click\', function() {' +
-                'var $this = $(this);' +
-                '$(\'.active\').removeClass(\'active\');' +
-                '$this.toggleClass(\'active\')' +
-                '})' +
-                '</script>';
-        this.alertFade = `<script>
+                    '$("#add").click(function() {' +
+                    '$("#devTable").append("' +
+                    this.deviceTemplate +
+                    '");' +
+                    '$("#devConfigForm").validator("update");' +
+                    '});' +
+                    '</>';
+            this.addSceneRow =
+                '<script>' +
+                    '$("#addScene").click(function() {' +
+                    '$("#sceneTemplate").append("' +
+                    this.sceneTemplate +
+                    '");' +
+                    '$("#sceneTemplate").validator("update");' +
+                    '});' +
+                    '</script>';
+            this.validator =
+                '<script src="https://cdnjs.cloudflare.com/ajax/libs/1000hz-bootstrap-validator/0.11.9/validator.min.js"></script>';
+            this.dataTable =
+                '<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.12/js/jquery.dataTables.min.js"></script>' +
+                    '<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.10.12/js/dataTables.bootstrap.min.js"></script>' +
+                    '<script>' +
+                    '$(document).ready(function() {' +
+                    '$(\'#linkTable\').DataTable({\'pageLength\': 25, \'responsive\': true, \'retrieve\': true});' +
+                    '});' +
+                    '</script>';
+            this.buttonAnimation =
+                '<script>' +
+                    '$(\'.btn.load\').on(\'click\', function() {' +
+                    'var $this = $(this);' +
+                    '$this.button(\'loading\');' +
+                    'setTimeout(function() {' +
+                    '$this.button(\'reset\');' +
+                    '}, 300000);' +
+                    '});' +
+                    '</script>';
+            this.listHighlight =
+                '<script>' +
+                    '$(\'.list-group-item\').on(\'click\', function() {' +
+                    'var $this = $(this);' +
+                    '$(\'.active\').removeClass(\'active\');' +
+                    '$this.toggleClass(\'active\')' +
+                    '})' +
+                    '</script>';
+            this.alertFade = `<script>
 		$(document).ready (
 			function(){
 				$("#saveAlert").fadeTo(2000, 500).slideUp(500, function(){
@@ -3579,7 +3589,7 @@ class InsteonUI {
 				});
 		});
 		</script>`;
-        this.sseInit = `<script>
+            this.sseInit = `<script>
 		var _sseSource = null;
 		function sseInit(e) {
 			var sender = $(e).attr('id');
@@ -3636,56 +3646,59 @@ class InsteonUI {
 			}, false);
 		}
 		</script>`;
-        /*this.progressModal = "<div id='progressModal' class='modal fade' role='dialog'>" +
-                          "<div class='modal-dialog'>" +
-                          "<div class='modal-content'>" +
-                          "<div class='modal-header'>" +
-                          "<button type='button' class='close' data-dismiss='modal'>&times;</button>" +
-                          "<h4 class='modal-title'>Getting links and devices from Hub...</h4>" +
-                          '</div>' +
-                          "<div class='modal-body' hidden='true'>" +
-                          '<p> </p>' +
-                          '</div>' +
-                          "<div class='modal-footer' hidden='true'>" +
-                          "<button type='button' class='btn btn-danger' id='progressModalYes'>Yes</button>" +
-                          "<button type='button' class='btn btn-default btn-primary' data-dismiss='modal'>Close</button>" +
-                          '</div>' +
-                          '</div>' +
-                          '</div>' +
-                          '</div>'*/
-        this.scripts =
-            this.validator +
-                this.dataTable +
-                this.buttonAnimation +
-                this.alertFade +
-                this.sseInit; //+ this.progressModal
-    }
-    stripEscapeCodes(chunk) {
-        const receivedData = chunk
-            .toString()
-            .replace(/%7E/g, '~')
-            .replace(/%26/g, '&')
-            .replace(/%40/g, '@')
-            .replace(/%23/g, '#')
-            .replace(/%7B/g, '{')
-            .replace(/%0D/g, '')
-            .replace(/%0A/g, '')
-            .replace(/%2C/g, ',')
-            .replace(/%7D/g, '}')
-            .replace(/%3A/g, ':')
-            .replace(/%22/g, '"')
-            .replace(/\+/g, ' ')
-            .replace(/\+\+/g, '')
-            .replace(/%2F/g, '/')
-            .replace(/%3C/g, '<')
-            .replace(/%3E/g, '>')
-            .replace(/%5B/g, '[')
-            .replace(/%5D/g, ']');
-        return receivedData;
-    }
-    log(data) {
-        const timestamp = (0, moment_1.default)().format('l, h:mm:ss A');
-        console.log('[' + timestamp + ']' + chalk_1.default.blue(' [InsteonUI] ') + data);
+            /*this.progressModal = "<div id='progressModal' class='modal fade' role='dialog'>" +
+                              "<div class='modal-dialog'>" +
+                              "<div class='modal-content'>" +
+                              "<div class='modal-header'>" +
+                              "<button type='button' class='close' data-dismiss='modal'>&times;</button>" +
+                              "<h4 class='modal-title'>Getting links and devices from Hub...</h4>" +
+                              '</div>' +
+                              "<div class='modal-body' hidden='true'>" +
+                              '<p> </p>' +
+                              '</div>' +
+                              "<div class='modal-footer' hidden='true'>" +
+                              "<button type='button' class='btn btn-danger' id='progressModalYes'>Yes</button>" +
+                              "<button type='button' class='btn btn-default btn-primary' data-dismiss='modal'>Close</button>" +
+                              '</div>' +
+                              '</div>' +
+                              '</div>' +
+                              '</div>'*/
+            this.scripts =
+                this.validator +
+                    this.dataTable +
+                    this.buttonAnimation +
+                    this.alertFade +
+                    this.sseInit; //+ this.progressModal
+        }
+        stripEscapeCodes(chunk);
+        {
+            const receivedData = chunk
+                .toString()
+                .replace(/%7E/g, '~')
+                .replace(/%26/g, '&')
+                .replace(/%40/g, '@')
+                .replace(/%23/g, '#')
+                .replace(/%7B/g, '{')
+                .replace(/%0D/g, '')
+                .replace(/%0A/g, '')
+                .replace(/%2C/g, ',')
+                .replace(/%7D/g, '}')
+                .replace(/%3A/g, ':')
+                .replace(/%22/g, '"')
+                .replace(/\+/g, ' ')
+                .replace(/\+\+/g, '')
+                .replace(/%2F/g, '/')
+                .replace(/%3C/g, '<')
+                .replace(/%3E/g, '>')
+                .replace(/%5B/g, '[')
+                .replace(/%5D/g, ']');
+            return receivedData;
+        }
+        log(data);
+        {
+            const timestamp = (0, moment_1.default)().format('l, h:mm:ss A');
+            console.log('[' + timestamp + ']' + chalk_1.default.blue(' [InsteonUI] ') + data);
+        }
     }
 }
 exports.InsteonUI = InsteonUI;

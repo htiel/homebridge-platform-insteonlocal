@@ -2947,10 +2947,7 @@ export class InsteonUI {
             sse.emit('push', { message: 'Adding ' + id + ' to config' });
 
             this.generateDeviceConfig(id, res, (error, devConf, res) => {
-              if (error) {
-                this.log('Error - could not generate device config for ' + id);
-                sse.emit('push', { message: 'Error generating config for ' + id });
-              } else {
+              if (devConf) {
                 this.addDeviceToConfig(devConf, res, () => { addedCount++; });
               }
               setTimeout(() => {
@@ -4134,6 +4131,27 @@ export class InsteonUI {
 
       theDevice = theDevice[0];
 
+      // Build device config from whatever info is available — never fail,
+      // just omit deviceType if we can't determine it.
+      const _buildConf = (deviceType?: string) => {
+        const devConf: any = {};
+        devConf.name = theDevice.name || theDevice.deviceID;
+        devConf.deviceID = theDevice.deviceID;
+        if (deviceType) {
+          devConf.deviceType = deviceType;
+          switch (deviceType) {
+            case 'dimmer':
+            case 'lightbulb':
+              devConf.dimmable = 'yes';
+              break;
+            case 'switch':
+              devConf.dimmable = 'no';
+              break;
+          }
+        }
+        callback(null, devConf, res);
+      };
+
       const _generateDeviceConfig = () => {
         const filtered = this.deviceDatabase.filter((item) => {
           return item.category == theDevice.info.deviceCategory.id;
@@ -4141,46 +4159,35 @@ export class InsteonUI {
         const found = filtered.find((item) => {
           return item.subcategory == theDevice.info.deviceSubcategory.id;
         });
-        const hkDeviceType = found.deviceType;
-
-        const devConf: any = {};
-        devConf.name = theDevice.name || theDevice.deviceID;
-        devConf.deviceID = theDevice.deviceID;
-        devConf.deviceType = hkDeviceType;
-
-        switch (devConf.deviceType) {
-          case 'dimmer':
-          case 'lightbulb':
-            devConf.dimmable = 'yes';
-            break;
-          case 'switch':
-            devConf.dimmable = 'no';
-            break;
-        }
-
-        callback(null, devConf, res);
+        _buildConf(found ? found.deviceType : undefined);
       };
 
+      // 1. Use deviceType already stored in insteonJSON (e.g. from CSV import)
+      const insteonDev = Array.isArray(this.insteonJSON.devices)
+        ? this.insteonJSON.devices.find((d) => d.deviceID === deviceID)
+        : null;
+      if (insteonDev && insteonDev.deviceType) {
+        this.log('Using cached deviceType for ' + deviceID + ': ' + insteonDev.deviceType);
+        _buildConf(insteonDev.deviceType);
+        return;
+      }
 
-      if (
-        typeof theDevice.info === 'undefined' ||
-            typeof theDevice.info.deviceCategory === 'undefined'
-      ) {
-        this.getDeviceInfo(theDevice.deviceID, res, (error, info) => {
-          if (typeof theDevice.info === 'undefined') {
-            //devInfo error callback broken
-            this.log('Could not get device info for ' + theDevice.deviceID);
-            error = new Error('Could not get device info');
-            callback(error, null, res);
-          } else {
-            _generateDeviceConfig();
-          }
-        });
-      } else {
+      // 2. Use hub info already in memory
+      if (theDevice.info && typeof theDevice.info.deviceCategory !== 'undefined') {
         this.log('Already have device info for ' + deviceID);
         _generateDeviceConfig();
+        return;
       }
-    }
+
+      // 3. Try to query hub — if it fails, still add device without type
+      this.getDeviceInfo(theDevice.deviceID, res, (error, info) => {
+        if (typeof theDevice.info === 'undefined') {
+          this.log('Could not get device info for ' + theDevice.deviceID + ', adding without type');
+          _buildConf(undefined);
+        } else {
+          _generateDeviceConfig();
+        }
+      });
 
     addDeviceToConfig(devConf, res, callback) {
       const configDevice = this.devices.filter((item) => {

@@ -110,10 +110,6 @@ export declare class InsteonUI {
     createScene(controller: any, responder: any, options: any, callback: any): void;
     buildHubSceneData(callback?: any): void;
     beep(deviceID: any): void;
-    generateDeviceConfig(deviceID: any, res: any, callback: any): void;
-    addDeviceToConfig(devConf: any, res: any, callback: any): void;
-    getScripts(): void;
-    stripEscapeCodes(chunk: any): any;
-    log(data: any): void;
+    generateDeviceConfig(deviceID: any, res: any, callback: any): any;
 }
 //# sourceMappingURL=insteon-ui.d.ts.map
