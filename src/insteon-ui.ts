@@ -144,6 +144,14 @@ export class InsteonUI {
 					font-family: monospace;
 					font-size: 12px;
 				}
+				.dev-status {
+					display: block;
+					font-size: 10px;
+					margin-top: 2px;
+					white-space: nowrap;
+					overflow: hidden;
+					text-overflow: ellipsis;
+				}
 			</style>`;
 
       this.bootstrap =
@@ -1667,6 +1675,7 @@ export class InsteonUI {
                     '">' +
                     linkText +
                     '</a>' +
+                    '<small id="devstatus-' + hubDevice.deviceID + '" class="dev-status"></small>' +
                     '</li class="list-group-item">';
         });
 
@@ -1684,7 +1693,7 @@ export class InsteonUI {
       res.write('<div class=\'container-fluid\'>');
       res.write('<div class=\'btn-toolbar pull-right\'>');
       res.write(
-        '<a class=\'btn btn-default load center-block getlinks\' onclick=\'sseInit()\' id=\'getAllLinks\' role=\'button\' href=\'/getAllDeviceLinks\' style=\'width:135px; height:30px;\'>Get All Dev Links</a>',
+        '<a class=\'btn btn-default load center-block getlinks\' onclick=\'sseInitAllLinks()\' id=\'getAllLinks\' role=\'button\' href=\'/getAllDeviceLinks\' style=\'width:135px; height:30px;\'>Get All Dev Links</a>',
       );
       res.write('</div>');
 
@@ -4266,14 +4275,21 @@ export class InsteonUI {
 		</script>`;
 
       this.sseInit = `<script>
+		var _sseSource = null;
 		function sseInit(e) {
 			var sender = $(e).attr('id');
 
 			$('#progressModal .modal-body').empty();
 			$('#progressModal .modal-footer').hide();
 
+			if (_sseSource) {
+				_sseSource.close();
+				_sseSource = null;
+			}
+
 			if (!!window.EventSource) {
 				var source = new EventSource('/events');
+				_sseSource = source;
 			}
 
 			$('#progressModal').modal({show:true});
@@ -4291,6 +4307,7 @@ export class InsteonUI {
 					body.append('<div style="color:#5cb85c">&#10003; Done.</div>');
 					body.scrollTop(body[0].scrollHeight);
 					source.close();
+					_sseSource = null;
 					$('#progressModal .modal-footer').show();
 				} else {
 					var color = '#333';
@@ -4310,6 +4327,92 @@ export class InsteonUI {
 			source.addEventListener('error', function(e) {
 				if (e.readyState == EventSource.CLOSED) {
 					this.log('Connection closed');
+				}
+			}, false);
+		}
+
+		function sseInitAllLinks() {
+			// Clear all previous statuses
+			$('.dev-status').text('').removeAttr('style');
+
+			if (_sseSource) { _sseSource.close(); _sseSource = null; }
+			if (!window.EventSource) return;
+
+			var source = new EventSource('/events');
+			_sseSource = source;
+
+			// Keep modal ready for the 'prompt' interaction
+			$('#progressModal .modal-body').empty();
+			$('#progressModal .modal-footer').hide();
+
+			function setStatus(id, color, text) {
+				$('#devstatus-' + id).css('color', color).text(text);
+			}
+
+			source.addEventListener('message', function(e) {
+				var data = JSON.parse(e.data);
+				var message = data.message;
+				var m;
+
+				if (message === 'prompt') {
+					$('#progressModal').modal({show:true});
+					$('#progressModal .modal-body').append('<div style="color:#f0ad4e">&#9658; No changes detected. Update links anyway?</div>');
+					$('#progressModal .modal-footer').show();
+					return;
+				}
+
+				if (message === 'close') {
+					source.close(); _sseSource = null;
+					var btn = $('#getAllLinks');
+					btn.text('\u2713 Done!').addClass('btn-success').removeClass('btn-default');
+					setTimeout(function() { btn.text('Get All Dev Links').addClass('btn-default').removeClass('btn-success'); }, 3000);
+					return;
+				}
+
+				// [n/N] Getting info for XXXXXX...  — start of device
+				if (m = message.match(/^\[\d+\/\d+\] Getting info for ([A-F0-9]{6})\.\.\./i)) {
+					setStatus(m[1], '#5bc0de', '\u21BB reading...');
+					return;
+				}
+
+				// [n/N] XXXXXX - result  — final per-device result
+				if (m = message.match(/^\[\d+\/\d+\] ([A-F0-9]{6}) - (.+)$/i)) {
+					var rid = m[1], result = m[2];
+					var rc = (result === 'Done') ? '#5cb85c'
+						: (result.indexOf('Offline') !== -1 || result.indexOf('Error') !== -1) ? '#d9534f'
+						: '#f0ad4e';
+					setStatus(rid, rc, result);
+					return;
+				}
+
+				// Getting links for XXXXXX (Found N links)
+				if (m = message.match(/^Getting links for ([A-F0-9]{6}) \(Found (\d+)/i)) {
+					setStatus(m[1], '#aaa', 'links (' + m[2] + ')...');
+					return;
+				}
+
+				// Getting operating flags for XXXXXX
+				if (m = message.match(/^Getting operating flags for ([A-F0-9]{6})/i)) {
+					setStatus(m[1], '#aaa', 'op flags...');
+					return;
+				}
+
+				// Getting database delta for XXXXXX
+				if (m = message.match(/^Getting database delta for ([A-F0-9]{6})/i)) {
+					setStatus(m[1], '#aaa', 'db delta...');
+					return;
+				}
+
+				// Getting links for XXXXXX (initial, before count)
+				if (m = message.match(/^Getting links for ([A-F0-9]{6})$/i)) {
+					setStatus(m[1], '#aaa', 'links...');
+					return;
+				}
+
+				// No links found in XXXXXX
+				if (m = message.match(/^No links found in ([A-F0-9]{6})/i)) {
+					setStatus(m[1], '#aaa', 'no links...');
+					return;
 				}
 			}, false);
 		}

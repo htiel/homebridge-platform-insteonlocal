@@ -2,11 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.17] - 2026-03-27
-### Fixed
-- **Get All Dev Links — devices with 0 links incorrectly reported as timed out**: `getDeviceLinks` was treating an empty link database (device responded but has no links) the same as a hub communication timeout. Both produced `callback(true, null)` and showed red "Timed out (battery device or offline)". Fixed by checking the `error` argument in the outer callback first: a hub communication error now propagates `'Timed out (no device response)'`; a successful response with 0 links emits "No links found in XXX (empty database)" and calls `callback(null, [])` (success).
-- **Get All Dev Links — queue hangs when device links are up to date**: When `getDatabaseDelta` returned the same value as the stored delta (links unchanged), `getAllDeviceInfo` emitted a `'prompt'` SSE event but never called its callback, leaving `_getAllDevLinks` waiting indefinitely for the next device. Added the missing `callback(null, null)` after the prompt emit.
-- **Get All Dev Links — all failures showed identical "battery device or offline" message**: The per-device error message in `_getAllDevLinks` was hardcoded regardless of the actual failure. Error messages are now passed as descriptive strings through the callback chain, so the final status line reflects the real cause (e.g. "Timed out (no device response)").
+## [0.5.18] - 2026-03-27
+### Enhanced
+- **Get All Dev Links — inline device status in left pane**: The operation no longer opens the scrolling progress modal. Instead, each device row in the left pane shows a live status label that updates as each step runs: `op flags...` → `db delta...` → `links (N)...`, resolving to a coloured final result — green `Done`, orange `No links returned (battery device or sensor)`, red `Offline (no device response)`. When all devices are processed, the "Get All Dev Links" button briefly shows ✓ Done!. The modal is still used when a device's link database is up-to-date and a confirmation prompt is needed.
+- **Duplicate SSE listener fixed**: Opening "Get All Dev Links" (or any SSE-backed action) multiple times on the same page previously registered a new EventSource listener on each click without closing the previous one, causing every message to be displayed twice. Now a single `_sseSource` reference is tracked globally and the old connection is closed before a new one is opened.
 
 ## [0.5.17] - 2026-03-27
 ### Fixed
