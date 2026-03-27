@@ -2818,9 +2818,6 @@ class InsteonUI {
                                 sse.emit('push', {
                                     message: 'Error getting links for ' + deviceID,
                                 });
-                                setTimeout(() => {
-                                    sse.emit('push', { message: 'close' });
-                                }, 3000);
                                 callback(error, null);
                             }
                             else {
