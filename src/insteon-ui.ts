@@ -2929,43 +2929,40 @@ export class InsteonUI {
           });
 
           const _addAllDevs = () => {
-            const redirect =
-                        '<script>window.setTimeout(function() {window.location.href = document.referrer;}, 2000);</script>';
-
             if (devIDs.length === 0) {
               this.log('Done adding all devices to config');
               this.saveConfig(res);
+              sse.emit('push', { message: 'close' });
               res.write(this.header + this.navBar);
               res.write(
                 '<div class=\'alert alert-success alert-dismissible fade in out alert-close\'><a href=\'/devices/' +
                             this.selectedDevice +
-                            '\' class=\'close\' data-dismiss=\'alert\'>&times;</a><strong>Note!</strong> Successfully saved device to config.</div>',
+                            '\' class=\'close\' data-dismiss=\'alert\'>&times;</a><strong>Note!</strong> Successfully added all devices to config.</div>',
               );
-              res.write(redirect);
+              res.write(this.redirect);
               return;
             }
 
-            _addAllDevs();
-
-            const id = devIDs.pop();
+            const id = devIDs.shift();
             sse.emit('push', { message: 'Adding ' + id + ' to config' });
 
             this.generateDeviceConfig(id, res, (error, devConf, res) => {
               if (error) {
                 this.log('Error - could not generate device config for ' + id);
-                return _addAllDevs();
+                sse.emit('push', { message: 'Error generating config for ' + id });
               } else {
                 this.log(
                   'Device config for ' + id + ' is: ' + util.inspect(devConf),
                 );
-                this.addDeviceToConfig(devConf, res, () => {
-                  setTimeout(() => {
-                    return _addAllDevs();
-                  }, 2000); //slight delay to minimize traffic and help eliminate errors
-                });
+                this.addDeviceToConfig(devConf, res, () => {});
               }
+              setTimeout(() => {
+                return _addAllDevs();
+              }, 1000);
             });
           };
+
+          _addAllDevs();
           break;
         default:
           const url = req.url;
