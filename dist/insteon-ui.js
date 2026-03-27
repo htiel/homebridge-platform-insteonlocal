@@ -80,6 +80,63 @@ class InsteonUI {
 					overflow: hidden;
 					text-overflow: ellipsis;
 				}
+				#sync-panel {
+					display: none;
+					position: fixed;
+					bottom: 24px;
+					right: 24px;
+					width: 360px;
+					max-height: 55vh;
+					background: #fff;
+					border: 1px solid #ccc;
+					border-radius: 6px;
+					box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+					z-index: 1060;
+					flex-direction: column;
+					overflow: hidden;
+					font-family: 'Open Sans', sans-serif;
+				}
+				#sync-panel.open { display: flex; }
+				#sync-panel-header {
+					padding: 10px 14px;
+					background: #337ab7;
+					color: #fff;
+					font-weight: 600;
+					font-size: 13px;
+					display: flex;
+					justify-content: space-between;
+					align-items: center;
+				}
+				#sync-panel-header button {
+					background: none;
+					border: none;
+					color: rgba(255,255,255,0.8);
+					font-size: 18px;
+					cursor: pointer;
+					line-height: 1;
+					padding: 0 2px;
+				}
+				#sync-panel-header button:hover { color: #fff; }
+				#sync-panel-body {
+					overflow-y: auto;
+					flex: 1;
+				}
+				.sync-row {
+					display: flex;
+					align-items: baseline;
+					padding: 6px 14px;
+					border-bottom: 1px solid #f0f0f0;
+					font-size: 12px;
+				}
+				.sync-row-name { flex: 1; font-weight: 600; color: #333; }
+				.sync-row-status { font-size: 11px; text-align: right; margin-left: 8px; }
+				#sync-panel-footer {
+					padding: 8px 14px;
+					border-top: 1px solid #e5e5e5;
+					font-size: 11px;
+					color: #888;
+					background: #fafafa;
+				}
 			</style>`;
         this.bootstrap =
             '<link rel=\'stylesheet\' href=\'https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\'>' +
@@ -1566,6 +1623,17 @@ class InsteonUI {
         res.write(this.confirmModal);
         res.write(this.databaseModal);
         res.write(this.progressModal);
+        res.write(`<div id="sync-panel">
+        <div id="sync-panel-header">
+          <span id="sync-panel-title">Syncing All Devices</span>
+          <span style="display:flex;align-items:center;gap:10px">
+            <span id="sync-panel-count" style="font-weight:normal;font-size:11px;opacity:0.85"></span>
+            <button onclick="document.getElementById('sync-panel').classList.remove('open')" title="Close">&times;</button>
+          </span>
+        </div>
+        <div id="sync-panel-body"></div>
+        <div id="sync-panel-footer" id="sync-panel-footer">Starting...</div>
+      </div>`);
         res.end(this.ajaxLoadScript +
             this.sseInit +
             this.modalConfirmScript +
@@ -3640,97 +3708,123 @@ class InsteonUI {
 		}
 
 		function sseInitAllLinks() {
-			// Clear all previous statuses
-			$('.dev-status').text('').removeAttr('style');
+			var devRows = {};
+			var total = 0;
+			var completed = 0;
 
 			if (_sseSource) { _sseSource.close(); _sseSource = null; }
 			if (!window.EventSource) return;
 
-			var source = new EventSource('/events');
-			_sseSource = source;
+			var panel    = document.getElementById('sync-panel');
+			var panelBody  = document.getElementById('sync-panel-body');
+			var panelCount = document.getElementById('sync-panel-count');
+			var panelTitle = document.getElementById('sync-panel-title');
+			var panelFooter = document.getElementById('sync-panel-footer');
 
-			// Keep modal ready for the 'prompt' interaction
+			panelBody.innerHTML = '';
+			panelTitle.textContent = 'Syncing All Devices';
+			panelCount.textContent = '';
+			panelFooter.textContent = 'Starting...';
+			panelFooter.style.color = '#888';
+			panel.classList.add('open');
+
 			$('#progressModal .modal-body').empty();
 			$('#progressModal .modal-footer').hide();
 
-			function setStatus(id, color, text) {
-				var el = $('#devstatus-' + id);
-				if (!el.length) {
-					// span not in DOM (old cached page) — find the device link and inject it
-					var link = $('a[href="/devices/' + id + '"]');
-					if (link.length) {
-						link.parent().append('<small id="devstatus-' + id + '" class="dev-status"></small>');
-						el = $('#devstatus-' + id);
-					}
-				}
-				el.css('color', color).text(text);
+			function getRow(id) {
+				if (devRows[id]) return devRows[id];
+				var row = document.createElement('div');
+				row.className = 'sync-row';
+				var nameEl = document.createElement('span');
+				nameEl.className = 'sync-row-name';
+				nameEl.textContent = id;
+				var statusEl = document.createElement('span');
+				statusEl.className = 'sync-row-status';
+				statusEl.style.color = '#aaa';
+				statusEl.textContent = 'waiting...';
+				row.appendChild(nameEl);
+				row.appendChild(statusEl);
+				panelBody.appendChild(row);
+				devRows[id] = statusEl;
+				panelBody.scrollTop = panelBody.scrollHeight;
+				return statusEl;
 			}
 
-			source.addEventListener('message', function(e) {
-				var data = JSON.parse(e.data);
-				var message = data.message;
+			function setStatus(id, color, text) {
+				var el = devRows[id] || getRow(id);
+				el.style.color = color;
+				el.textContent = text;
+				panelBody.scrollTop = panelBody.scrollHeight;
+				// Also update the inline span in the device list if present
+				var inline = document.getElementById('devstatus-' + id);
+				if (inline) { inline.style.color = color; inline.textContent = text; }
+			}
+
+			var source = new EventSource('/events');
+			_sseSource = source;
+
+			source.addEventListener('message', function(ev) {
+				var data = JSON.parse(ev.data);
+				var msg = data.message;
 				var m;
 
-				if (message === 'prompt') {
+				if (msg === 'prompt') {
 					$('#progressModal').modal({show:true});
 					$('#progressModal .modal-body').append('<div style="color:#f0ad4e">&#9658; No changes detected. Update links anyway?</div>');
 					$('#progressModal .modal-footer').show();
 					return;
 				}
 
-				if (message === 'close') {
+				if (msg === 'close') {
 					source.close(); _sseSource = null;
-					var btn = $('#getAllLinks');
-					btn.text('\u2713 Done!').addClass('btn-success').removeClass('btn-default');
-					setTimeout(function() { btn.text('Get All Dev Links').addClass('btn-default').removeClass('btn-success'); }, 3000);
+					panelTitle.textContent = '\u2713 Sync Complete';
+					panelFooter.textContent = completed + ' of ' + total + ' devices processed';
+					panelFooter.style.color = '#5cb85c';
+					var btn = document.getElementById('getAllLinks');
+					if (btn) {
+						btn.textContent = '\u2713 Done!';
+						btn.classList.add('btn-success');
+						btn.classList.remove('btn-default');
+						setTimeout(function() { btn.textContent = 'Get All Dev Links'; btn.classList.remove('btn-success'); btn.classList.add('btn-default'); }, 3000);
+					}
 					return;
 				}
 
-				// [n/N] Getting info for XXXXXX...  — start of device
-				if (m = message.match(/^\[\d+\/\d+\] Getting info for ([A-F0-9]{6})\.\.\./i)) {
-					setStatus(m[1], '#5bc0de', '\u21BB reading...');
+				m = msg.match(/^\[(\d+)\/(\d+)\] Getting info for ([0-9A-F]{6})\.\.\./i);
+				if (m) {
+					total = parseInt(m[2]);
+					panelCount.textContent = m[1] + ' / ' + m[2];
+					panelFooter.textContent = 'Processing device ' + m[1] + ' of ' + m[2] + '...';
+					getRow(m[3]);
+					setStatus(m[3], '#5bc0de', '\u21BB reading...');
 					return;
 				}
 
-				// [n/N] XXXXXX - result  — final per-device result
-				if (m = message.match(/^\[\d+\/\d+\] ([A-F0-9]{6}) - (.+)$/i)) {
-					var rid = m[1], result = m[2];
-					var rc = (result === 'Done') ? '#5cb85c'
-						: (result.indexOf('Offline') !== -1 || result.indexOf('Error') !== -1) ? '#d9534f'
-						: '#f0ad4e';
-					setStatus(rid, rc, result);
+				m = msg.match(/^\[(\d+)\/\d+\] ([0-9A-F]{6}) - (.+)$/i);
+				if (m) {
+					completed = parseInt(m[1]);
+					panelCount.textContent = m[1] + ' / ' + total;
+					var result = m[3];
+					var rc = result === 'Done' ? '#5cb85c' : (result.indexOf('Offline') !== -1 || result.indexOf('Error') !== -1) ? '#d9534f' : '#f0ad4e';
+					setStatus(m[2], rc, result);
 					return;
 				}
 
-				// Getting links for XXXXXX (Found N links)
-				if (m = message.match(/^Getting links for ([A-F0-9]{6}) \(Found (\d+)/i)) {
-					setStatus(m[1], '#aaa', 'links (' + m[2] + ')...');
-					return;
-				}
+				m = msg.match(/^Getting operating flags for ([0-9A-F]{6})/i);
+				if (m) { setStatus(m[1], '#aaa', 'op flags...'); return; }
 
-				// Getting operating flags for XXXXXX
-				if (m = message.match(/^Getting operating flags for ([A-F0-9]{6})/i)) {
-					setStatus(m[1], '#aaa', 'op flags...');
-					return;
-				}
+				m = msg.match(/^Getting database delta for ([0-9A-F]{6})/i);
+				if (m) { setStatus(m[1], '#aaa', 'db delta...'); return; }
 
-				// Getting database delta for XXXXXX
-				if (m = message.match(/^Getting database delta for ([A-F0-9]{6})/i)) {
-					setStatus(m[1], '#aaa', 'db delta...');
-					return;
-				}
+				m = msg.match(/^Getting links for ([0-9A-F]{6}) \(Found (\d+)/i);
+				if (m) { setStatus(m[1], '#aaa', 'links (' + m[2] + ')...'); return; }
 
-				// Getting links for XXXXXX (initial, before count)
-				if (m = message.match(/^Getting links for ([A-F0-9]{6})$/i)) {
-					setStatus(m[1], '#aaa', 'links...');
-					return;
-				}
+				m = msg.match(/^Getting links for ([0-9A-F]{6})$/i);
+				if (m) { setStatus(m[1], '#aaa', 'links...'); return; }
 
-				// No links found in XXXXXX
-				if (m = message.match(/^No links found in ([A-F0-9]{6})/i)) {
-					setStatus(m[1], '#aaa', 'no links...');
-					return;
-				}
+				m = msg.match(/^No links found in ([0-9A-F]{6})/i);
+				if (m) { setStatus(m[1], '#f0ad4e', 'no links'); return; }
+
 			}, false);
 		}
 		</script>`;
