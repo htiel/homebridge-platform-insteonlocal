@@ -2436,20 +2436,21 @@ class InsteonUI {
             case '/addAllDevicesToConfig':
                 this.log('Adding all devices to config');
                 req.connection.setTimeout(1000 * 60 * 10);
-                const devIDs = [];
-                this.hubDevices.forEach((device) => {
-                    devIDs.push(device.deviceID);
-                });
+                // Deduplicate device IDs in case hubDevices has duplicates
+                const devIDs = [...new Set(this.hubDevices.map((d) => d.deviceID))];
+                const totalDevs = devIDs.length;
+                let addedCount = 0;
                 const _addAllDevs = () => {
                     if (devIDs.length === 0) {
                         this.log('Done adding all devices to config');
                         this.saveConfig(res);
                         sse.emit('push', { message: 'close' });
-                        res.write(this.header + this.navBar);
-                        res.write('<div class=\'alert alert-success alert-dismissible fade in out alert-close\'><a href=\'/devices/' +
+                        const doneRedirect = '<script>window.setTimeout(function() {window.location.href = document.referrer;}, 2000);</script>';
+                        res.end(this.header + this.navBar +
+                            '<div class=\'alert alert-success alert-dismissible fade in out alert-close\'><a href=\'/devices/' +
                             this.selectedDevice +
-                            '\' class=\'close\' data-dismiss=\'alert\'>&times;</a><strong>Note!</strong> Successfully added all devices to config.</div>');
-                        res.write(this.redirect);
+                            '\' class=\'close\' data-dismiss=\'alert\'>&times;</a><strong>Note!</strong> Added ' + addedCount + ' of ' + totalDevs + ' devices to config.</div>' +
+                            doneRedirect);
                         return;
                     }
                     const id = devIDs.shift();
@@ -2460,12 +2461,11 @@ class InsteonUI {
                             sse.emit('push', { message: 'Error generating config for ' + id });
                         }
                         else {
-                            this.log('Device config for ' + id + ' is: ' + util_1.default.inspect(devConf));
-                            this.addDeviceToConfig(devConf, res, () => { });
+                            this.addDeviceToConfig(devConf, res, () => { addedCount++; });
                         }
                         setTimeout(() => {
                             return _addAllDevs();
-                        }, 1000);
+                        }, 500);
                     });
                 };
                 _addAllDevs();
@@ -3515,8 +3515,6 @@ class InsteonUI {
         else {
             this.log('Device not found in config, adding ' + devConf.name + '.');
             this.config.platforms[this.platformIndex].devices.push(devConf);
-            this.log('Config to save: ' + JSON.stringify(this.config));
-            //this.saveConfig(res)
             callback(res);
         }
     }
