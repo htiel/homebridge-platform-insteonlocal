@@ -2441,7 +2441,9 @@ export class InsteonUI {
             req.on('data', (chunk) => {
               const body = chunk.toString();
               const csvParam = body.split('csvData=')[1];
-              if (!csvParam) { res.writeHead(400); res.end('No CSV data'); return; }
+              if (!csvParam) {
+                res.writeHead(400); res.end('No CSV data'); return;
+              }
               const csv = decodeURIComponent(csvParam.replace(/\+/g, ' '));
               const results = this.processInsteonConnectCSV(csv);
               res.write(this.header + this.navBar);
@@ -2457,10 +2459,22 @@ export class InsteonUI {
               }
               res.write('<a class=\'btn btn-default\' href=\'/devices\'>Back to Devices</a>');
               res.end(this.footer);
+              // Write atomically: write to temp file first, then rename
               const newInsteonJSON = JSON.stringify(this.insteonJSON, null, 4);
-              fs.writeFile(this.configDir + './insteon.json', newInsteonJSON, 'utf8', (err) => {
-                if (err) { this.log('Error saving insteon.json after import: ' + err); }
-                else { this.log('Saved insteon.json after Insteon Connect import'); }
+              const targetPath = this.configDir + './insteon.json';
+              const tempPath = targetPath + '.import-tmp';
+              fs.writeFile(tempPath, newInsteonJSON, 'utf8', (writeErr) => {
+                if (writeErr) {
+                  this.log('Error writing temp insteon.json after import: ' + writeErr);
+                } else {
+                  fs.rename(tempPath, targetPath, (renameErr) => {
+                    if (renameErr) {
+                      this.log('Error renaming temp insteon.json after import: ' + renameErr);
+                    } else {
+                      this.log('Saved insteon.json after Insteon Connect import');
+                    }
+                  });
+                }
               });
             });
           } else {
@@ -3305,7 +3319,10 @@ export class InsteonUI {
     }
 
     processInsteonConnectCSV(csv: string) {
-      // Model name -> deviceType mapping
+      // Ensure devices is a proper array before we try to use findIndex
+      const devices: any[] = Array.isArray(this.insteonJSON.devices)
+        ? this.insteonJSON.devices
+        : (Array.isArray(this.hubDevices) ? this.hubDevices : []);
       const modelToType: Record<string, string> = {
         'dimmer switch': 'dimmer',
         'dimmer module': 'dimmer',
@@ -3339,7 +3356,7 @@ export class InsteonUI {
       const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
       // Find header row — accept both "DeviceInsteonID" (export) and "Insteon ID" (web view)
       const headerIndex = lines.findIndex((l) =>
-        l.toLowerCase().includes('deviceinsteonid') || l.toLowerCase().includes('insteon id')
+        l.toLowerCase().includes('deviceinsteonid') || l.toLowerCase().includes('insteon id'),
       );
       if (headerIndex === -1) {
         return { matched: 0, unmatched: 0, details: [] };
@@ -3360,20 +3377,26 @@ export class InsteonUI {
 
       for (let i = headerIndex + 1; i < lines.length; i++) {
         const cols = this.parseCSVLine(lines[i]);
-        if (cols.length <= Math.max(nameCol, idCol)) continue;
+        if (cols.length <= Math.max(nameCol, idCol)) {
+          continue;
+        }
 
         const name = cols[nameCol].trim();
         const rawID = cols[idCol].trim();
         const model = modelCol >= 0 ? cols[modelCol].trim() : '';
 
-        if (!name || !rawID) continue;
+        if (!name || !rawID) {
+          continue;
+        }
 
         // Normalize ID: remove dots and uppercase
         const insteonID = rawID.replace(/\./g, '').toUpperCase();
-        if (!/^[0-9A-F]{6}$/.test(insteonID)) continue;
+        if (!/^[0-9A-F]{6}$/.test(insteonID)) {
+          continue;
+        }
 
-        const devIndex = this.insteonJSON.devices.findIndex((d) =>
-          d.deviceID && d.deviceID.replace(/\./g, '').toUpperCase() === insteonID
+        const devIndex = devices.findIndex((d) =>
+          d.deviceID && d.deviceID.replace(/\./g, '').toUpperCase() === insteonID,
         );
 
         if (devIndex === -1) {
@@ -3382,19 +3405,22 @@ export class InsteonUI {
           continue;
         }
 
-        this.insteonJSON.devices[devIndex].name = name;
+        devices[devIndex].name = name;
 
         // Set deviceType from model if not already set
-        if (model && !this.insteonJSON.devices[devIndex].deviceType) {
+        if (model && !devices[devIndex].deviceType) {
           const deviceType = modelToType[model.toLowerCase()];
           if (deviceType) {
-            this.insteonJSON.devices[devIndex].deviceType = deviceType;
+            devices[devIndex].deviceType = deviceType;
           }
         }
 
         matched++;
         details.push({ id: insteonID, name, status: 'matched' });
       }
+
+      // Sync modified devices array back to insteonJSON so the save captures the changes
+      this.insteonJSON.devices = devices;
 
       return { matched, unmatched, details };
     }
@@ -3406,8 +3432,11 @@ export class InsteonUI {
       for (let i = 0; i < line.length; i++) {
         const ch = line[i];
         if (ch === '"') {
-          if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-          else { inQuotes = !inQuotes; }
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"'; i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
         } else if (ch === ',' && !inQuotes) {
           result.push(current);
           current = '';

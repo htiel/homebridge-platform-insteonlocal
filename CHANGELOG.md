@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.16] - 2026-03-28
+### Added
+- **Import Names from Insteon Connect**: New option in the Device Action menu lets you paste a CSV exported from connect.insteon.com and apply device names (and device types inferred from the Model column) to all matched hub devices in one step. The import page renders a textarea form; on submit it parses the CSV, matches by Insteon ID (period-insensitive), updates names and types, and writes the result atomically (temp file then rename) to avoid corrupting insteon.json on failure. A results table shows each matched/unmatched row.
+### Fixed
+- **CSV import crash / insteon.json corruption**: `processInsteonConnectCSV` operated on `this.insteonJSON.devices` which is initialized as `{}` (plain object, not array) during `getHubDevices`. Any call to `findIndex` on an object is `undefined`, causing a runtime exception that left a partial JSON write and an empty/corrupt insteon.json on the next Homebridge restart. Fixed by using a local `devices` array (falling back to `hubDevices` if `insteonJSON.devices` is not yet an array), operating on that array throughout the loop, then syncing it back to `this.insteonJSON.devices` before the atomic save.
+
 ## [0.5.15] - 2026-03-27
 ### Fixed
 - **Get All Dev Links progress modal closing after first device**: `getDeviceLinks` was emitting a `close` SSE event on both success and failure, dismissing the modal after every single device instead of waiting for the full run to complete. Removed the spurious `close` emits — only the top-level loop now signals completion.

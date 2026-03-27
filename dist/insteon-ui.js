@@ -2042,13 +2042,23 @@ class InsteonUI {
                         }
                         res.write('<a class=\'btn btn-default\' href=\'/devices\'>Back to Devices</a>');
                         res.end(this.footer);
+                        // Write atomically: write to temp file first, then rename
                         const newInsteonJSON = JSON.stringify(this.insteonJSON, null, 4);
-                        fs_1.default.writeFile(this.configDir + './insteon.json', newInsteonJSON, 'utf8', (err) => {
-                            if (err) {
-                                this.log('Error saving insteon.json after import: ' + err);
+                        const targetPath = this.configDir + './insteon.json';
+                        const tempPath = targetPath + '.import-tmp';
+                        fs_1.default.writeFile(tempPath, newInsteonJSON, 'utf8', (writeErr) => {
+                            if (writeErr) {
+                                this.log('Error writing temp insteon.json after import: ' + writeErr);
                             }
                             else {
-                                this.log('Saved insteon.json after Insteon Connect import');
+                                fs_1.default.rename(tempPath, targetPath, (renameErr) => {
+                                    if (renameErr) {
+                                        this.log('Error renaming temp insteon.json after import: ' + renameErr);
+                                    }
+                                    else {
+                                        this.log('Saved insteon.json after Insteon Connect import');
+                                    }
+                                });
                             }
                         });
                     });
@@ -2762,7 +2772,10 @@ class InsteonUI {
         res.end(this.footer);
     }
     processInsteonConnectCSV(csv) {
-        // Model name -> deviceType mapping
+        // Ensure devices is a proper array before we try to use findIndex
+        const devices = Array.isArray(this.insteonJSON.devices)
+            ? this.insteonJSON.devices
+            : (Array.isArray(this.hubDevices) ? this.hubDevices : []);
         const modelToType = {
             'dimmer switch': 'dimmer',
             'dimmer module': 'dimmer',
@@ -2810,34 +2823,39 @@ class InsteonUI {
         const details = [];
         for (let i = headerIndex + 1; i < lines.length; i++) {
             const cols = this.parseCSVLine(lines[i]);
-            if (cols.length <= Math.max(nameCol, idCol))
+            if (cols.length <= Math.max(nameCol, idCol)) {
                 continue;
+            }
             const name = cols[nameCol].trim();
             const rawID = cols[idCol].trim();
             const model = modelCol >= 0 ? cols[modelCol].trim() : '';
-            if (!name || !rawID)
+            if (!name || !rawID) {
                 continue;
+            }
             // Normalize ID: remove dots and uppercase
             const insteonID = rawID.replace(/\./g, '').toUpperCase();
-            if (!/^[0-9A-F]{6}$/.test(insteonID))
+            if (!/^[0-9A-F]{6}$/.test(insteonID)) {
                 continue;
-            const devIndex = this.insteonJSON.devices.findIndex((d) => d.deviceID && d.deviceID.replace(/\./g, '').toUpperCase() === insteonID);
+            }
+            const devIndex = devices.findIndex((d) => d.deviceID && d.deviceID.replace(/\./g, '').toUpperCase() === insteonID);
             if (devIndex === -1) {
                 unmatched++;
                 details.push({ id: insteonID, name, status: 'not found in hub' });
                 continue;
             }
-            this.insteonJSON.devices[devIndex].name = name;
+            devices[devIndex].name = name;
             // Set deviceType from model if not already set
-            if (model && !this.insteonJSON.devices[devIndex].deviceType) {
+            if (model && !devices[devIndex].deviceType) {
                 const deviceType = modelToType[model.toLowerCase()];
                 if (deviceType) {
-                    this.insteonJSON.devices[devIndex].deviceType = deviceType;
+                    devices[devIndex].deviceType = deviceType;
                 }
             }
             matched++;
             details.push({ id: insteonID, name, status: 'matched' });
         }
+        // Sync modified devices array back to insteonJSON so the save captures the changes
+        this.insteonJSON.devices = devices;
         return { matched, unmatched, details };
     }
     parseCSVLine(line) {
