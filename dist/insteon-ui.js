@@ -66,7 +66,11 @@ class InsteonUI {
 					rules: none;
 				}
 				#progressModal .modal-body{
-					text-align: center;
+					text-align: left;
+					max-height: 350px;
+					overflow-y: auto;
+					font-family: monospace;
+					font-size: 12px;
 				}
 			</style>`;
         this.bootstrap =
@@ -2201,14 +2205,25 @@ class InsteonUI {
                 this.hubDevices.forEach((device) => {
                     linkDevIDs.push(device.deviceID);
                 });
+                const totalDevices = linkDevIDs.length;
+                let completedDevices = 0;
                 const _getAllDevLinks = () => {
                     if (linkDevIDs.length === 0) {
                         this.log('Done getting all device links');
+                        sse.emit('push', { message: 'close' });
                         this.saveInsteonConfig(res);
                         return;
                     }
                     const id = linkDevIDs.pop();
-                    this.getAllDeviceInfo(id, res, () => {
+                    completedDevices++;
+                    sse.emit('push', { message: `[${completedDevices}/${totalDevices}] Getting info for ${id}...` });
+                    this.getAllDeviceInfo(id, res, (error) => {
+                        if (error) {
+                            sse.emit('push', { message: `[${completedDevices}/${totalDevices}] ${id} - Timed out (battery device or offline)` });
+                        }
+                        else {
+                            sse.emit('push', { message: `[${completedDevices}/${totalDevices}] ${id} - Done` });
+                        }
                         setTimeout(() => {
                             return _getAllDevLinks();
                         }, 4000); //slight delay to minimize traffic and help eliminate errors
@@ -3362,6 +3377,9 @@ class InsteonUI {
 		function sseInit(e) {
 			var sender = $(e).attr('id');
 
+			$('#progressModal .modal-body').empty();
+			$('#progressModal .modal-footer').hide();
+
 			if (!!window.EventSource) {
 				var source = new EventSource('/events');
 			}
@@ -3369,17 +3387,27 @@ class InsteonUI {
 			$('#progressModal').modal({show:true});
 
 			source.addEventListener('message', function(e) {
-				this.log(e.data);
-				var data = JSON.parse(e.data)
-				var message = data.message
+				var data = JSON.parse(e.data);
+				var message = data.message;
+				var body = $('#progressModal .modal-body');
 
-			if(message == 'prompt') {
+				if (message == 'prompt') {
 					$('#progressModal .modal-footer').show();
-					message = 'No changes to device database.  Update links anyway?'
-					$('#progressModal .modal-body').text(message);
-				} else if(message == 'close') {
-					$('#progressModal').modal({show:false});
-				} else {$('#progressModal .modal-body').text(message);}
+					body.append('<div style="color:#f0ad4e">&#9658; No changes detected. Update links anyway?</div>');
+					body.scrollTop(body[0].scrollHeight);
+				} else if (message == 'close') {
+					body.append('<div style="color:#5cb85c">&#10003; Done.</div>');
+					body.scrollTop(body[0].scrollHeight);
+					source.close();
+					$('#progressModal .modal-footer').show();
+				} else {
+					var color = '#333';
+					if (message.indexOf('Error') !== -1 || message.indexOf('Timed out') !== -1) { color = '#d9534f'; }
+					else if (message.indexOf('Done') !== -1 || message.indexOf('loaded') !== -1) { color = '#5cb85c'; }
+					else if (message.indexOf('Getting') !== -1 || message.indexOf('Loading') !== -1) { color = '#5bc0de'; }
+					body.append('<div style="color:' + color + '">' + message + '</div>');
+					body.scrollTop(body[0].scrollHeight);
+				}
 			}, false);
 
 			source.addEventListener('open', function(e) {

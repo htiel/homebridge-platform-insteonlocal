@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - **Hub password no longer visible in InsteonUI**: The hub password field on the Config page was rendered as `type='text'`, making the password visible in the browser and in page source. Changed to `type='password'`.
 - **Hub credentials no longer logged to Homebridge log**: When saving config via the InsteonUI, the full config object (including hub username and password) was written to the Homebridge log via `JSON.stringify(this.config)`. Replaced with a redacted message.
 - **Device ID validation in InsteonUI action routes**: The `removeDevice`, `removeLink`, `removeHubLink`, `beep`, and `getLinks` URL-based routes in the InsteonUI extracted device IDs and link indices directly from the raw URL with no validation. All now validate the device ID against the 6-character hex format and return HTTP 400 on invalid input.
+### Enhanced
+- **Get All Dev Links progress log**: The "Updating device..." modal now shows a live scrollable log with per-device status — green for success, red for timeouts (battery/offline devices), blue for in-progress. Each line shows the device ID and position in the queue (e.g. `[2/6] Getting info for 6072DB...`).
 
 ## [0.5.13] - 2026-03-26
 ### Fixed
