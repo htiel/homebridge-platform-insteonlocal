@@ -4346,7 +4346,16 @@ export class InsteonUI {
 			$('#progressModal .modal-footer').hide();
 
 			function setStatus(id, color, text) {
-				$('#devstatus-' + id).css('color', color).text(text);
+				var el = $('#devstatus-' + id);
+				if (!el.length) {
+					// span not in DOM (old cached page) — find the device link and inject it
+					var link = $('a[href="/devices/' + id + '"]');
+					if (link.length) {
+						link.parent().append('<small id="devstatus-' + id + '" class="dev-status"></small>');
+						el = $('#devstatus-' + id);
+					}
+				}
+				el.css('color', color).text(text);
 			}
 
 			source.addEventListener('message', function(e) {
