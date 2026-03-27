@@ -2661,7 +2661,7 @@ export class InsteonUI {
               return;
             }
 
-            const id = linkDevIDs.pop();
+            const id = linkDevIDs.shift();
             completedDevices++;
             sse.emit('push', { message: `[${completedDevices}/${totalDevices}] Getting info for ${id}...` });
             this.getAllDeviceInfo(id, res, (error) => {
@@ -3462,7 +3462,6 @@ export class InsteonUI {
         if (linkArray.length == 0) {
           this.log('No links returned from ' + deviceID);
           callback(true, null);
-          sse.emit('push', { message: 'close' });
           return;
         }
 
@@ -3471,7 +3470,6 @@ export class InsteonUI {
         });
 
         this.insteonJSON.devices[devIndex].links = linkArray;
-        sse.emit('push', { message: 'close' });
         callback(null, linkArray);
       });
     }

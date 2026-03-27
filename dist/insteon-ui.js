@@ -2214,7 +2214,7 @@ class InsteonUI {
                         this.saveInsteonConfig(res);
                         return;
                     }
-                    const id = linkDevIDs.pop();
+                    const id = linkDevIDs.shift();
                     completedDevices++;
                     sse.emit('push', { message: `[${completedDevices}/${totalDevices}] Getting info for ${id}...` });
                     this.getAllDeviceInfo(id, res, (error) => {
@@ -2879,14 +2879,12 @@ class InsteonUI {
             if (linkArray.length == 0) {
                 this.log('No links returned from ' + deviceID);
                 callback(true, null);
-                sse.emit('push', { message: 'close' });
                 return;
             }
             linkArray.forEach((item) => {
                 item.id = item.id.toUpperCase();
             });
             this.insteonJSON.devices[devIndex].links = linkArray;
-            sse.emit('push', { message: 'close' });
             callback(null, linkArray);
         });
     }
