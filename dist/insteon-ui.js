@@ -1396,6 +1396,7 @@ class InsteonUI {
 			<ul class="dropdown-menu">
 				<li><a href='/getHubDevices' style='width:135px; height:30px;'>Get Devices</a></li>
 				<li><a onclick='sseInit()' href="/addAllDevicesToConfig">Add All to Config</a></li>
+				<li><a href='/importInsteonConnect'>Import Names from Insteon Connect</a></li>
 			</ul>
 			</div>
 		</li>`);
@@ -2012,6 +2013,51 @@ class InsteonUI {
                 break;
             case '/addDevice':
                 this.renderAddPage(res, 'Device');
+                break;
+            case '/importInsteonConnect':
+                this.renderImportInsteonConnectPage(res);
+                break;
+            case '/saveInsteonConnectImport':
+                if (req.method == 'POST') {
+                    req.on('data', (chunk) => {
+                        const body = chunk.toString();
+                        const csvParam = body.split('csvData=')[1];
+                        if (!csvParam) {
+                            res.writeHead(400);
+                            res.end('No CSV data');
+                            return;
+                        }
+                        const csv = decodeURIComponent(csvParam.replace(/\+/g, ' '));
+                        const results = this.processInsteonConnectCSV(csv);
+                        res.write(this.header + this.navBar);
+                        res.write('<div class=\'container\'>\n<h2>Import Results</h2>');
+                        res.write('<p>' + results.matched + ' device(s) matched and named. ' + results.unmatched + ' device(s) in CSV not found in hub.</p>');
+                        if (results.details.length > 0) {
+                            res.write('<table class=\'table table-striped table-bordered\' style=\'max-width:800px\'><thead><tr><th>Insteon ID</th><th>Name</th><th>Status</th></tr></thead><tbody>');
+                            results.details.forEach((d) => {
+                                const color = d.status === 'matched' ? '#5cb85c' : '#d9534f';
+                                res.write('<tr><td>' + d.id + '</td><td>' + d.name + '</td><td style=\'color:' + color + '\'>' + d.status + '</td></tr>');
+                            });
+                            res.write('</tbody></table>');
+                        }
+                        res.write('<a class=\'btn btn-default\' href=\'/devices\'>Back to Devices</a>');
+                        res.end(this.footer);
+                        const newInsteonJSON = JSON.stringify(this.insteonJSON, null, 4);
+                        fs_1.default.writeFile(this.configDir + './insteon.json', newInsteonJSON, 'utf8', (err) => {
+                            if (err) {
+                                this.log('Error saving insteon.json after import: ' + err);
+                            }
+                            else {
+                                this.log('Saved insteon.json after Insteon Connect import');
+                            }
+                        });
+                    });
+                }
+                else {
+                    this.log('[405] ' + req.method + ' to ' + req.url);
+                    res.writeHead(405);
+                    res.end();
+                }
                 break;
             case '/link':
                 this.renderLinkPage(res);
@@ -2701,6 +2747,124 @@ class InsteonUI {
                 return;
             }
         });
+    }
+    renderImportInsteonConnectPage(res) {
+        res.write(this.header + this.navBar);
+        res.write('<div class=\'container\'>');
+        res.write('<h2>Import Names from Insteon Connect</h2>');
+        res.write('<p>Go to <a href=\'https://connect.insteon.com/Home/ShowHouseDeviceList?HouseId=0\' target=\'_blank\'>connect.insteon.com</a>, click <b>Devices &rarr; Export to CSV</b>, then paste the CSV contents below and click Import.</p>');
+        res.write('<form method=\'POST\' action=\'/saveInsteonConnectImport\'>');
+        res.write('<div class=\'form-group\'><label>Paste CSV data:</label><textarea name=\'csvData\' class=\'form-control\' rows=\'15\' style=\'font-family:monospace;font-size:12px\' placeholder=\'Device Name,Rooms,Model,Part #,Insteon ID,Added,Updated,Battery,Power line,RF&#10;Front Entry,,Dimmer Switch,2477D,29.C8.A4,...\'></textarea></div>');
+        res.write('<button type=\'submit\' class=\'btn btn-primary\'>Import</button> ');
+        res.write('<a class=\'btn btn-default\' href=\'/devices\'>Cancel</a>');
+        res.write('</form>');
+        res.write('</div>');
+        res.end(this.footer);
+    }
+    processInsteonConnectCSV(csv) {
+        // Model name -> deviceType mapping
+        const modelToType = {
+            'dimmer switch': 'dimmer',
+            'dimmer module': 'dimmer',
+            'dimmer': 'dimmer',
+            'on/off switch': 'switch',
+            'on/off toggle': 'switch',
+            'on/off module': 'switch',
+            'outlet': 'outlet',
+            'i3 outlet': 'outlet',
+            'motion sensor': 'motionsensor',
+            'motion sensor ii': 'motionsensor',
+            'door sensor': 'doorsensor',
+            'open/close sensor': 'doorsensor',
+            'leak sensor': 'leaksensor',
+            'water leak sensor': 'leaksensor',
+            'smoke detector': 'smoke',
+            'smoke bridge': 'smoke',
+            'keypadlinc dimmer': 'keypad',
+            'keypadlinc relay': 'keypad',
+            'keypad': 'keypad',
+            'i3 paddle': 'dimmer',
+            'fanlinc': 'fan',
+            'fan': 'fan',
+            'iolinc': 'iolinc',
+            'garage door': 'iolinc',
+            'mini remote': 'remote',
+            'mini remote - switch': 'remote',
+            'thermostat': 'thermostat',
+        };
+        const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
+        // Find header row — accept both "DeviceInsteonID" (export) and "Insteon ID" (web view)
+        const headerIndex = lines.findIndex((l) => l.toLowerCase().includes('deviceinsteonid') || l.toLowerCase().includes('insteon id'));
+        if (headerIndex === -1) {
+            return { matched: 0, unmatched: 0, details: [] };
+        }
+        const headers = this.parseCSVLine(lines[headerIndex]).map((h) => h.trim().toLowerCase().replace(/\s/g, ''));
+        const nameCol = headers.findIndex((h) => h === 'devicename' || h === 'devicename');
+        const idCol = headers.findIndex((h) => h === 'deviceinsteonid' || h === 'insteonid');
+        const modelCol = headers.findIndex((h) => h === 'model');
+        if (nameCol === -1 || idCol === -1) {
+            return { matched: 0, unmatched: 0, details: [] };
+        }
+        let matched = 0;
+        let unmatched = 0;
+        const details = [];
+        for (let i = headerIndex + 1; i < lines.length; i++) {
+            const cols = this.parseCSVLine(lines[i]);
+            if (cols.length <= Math.max(nameCol, idCol))
+                continue;
+            const name = cols[nameCol].trim();
+            const rawID = cols[idCol].trim();
+            const model = modelCol >= 0 ? cols[modelCol].trim() : '';
+            if (!name || !rawID)
+                continue;
+            // Normalize ID: remove dots and uppercase
+            const insteonID = rawID.replace(/\./g, '').toUpperCase();
+            if (!/^[0-9A-F]{6}$/.test(insteonID))
+                continue;
+            const devIndex = this.insteonJSON.devices.findIndex((d) => d.deviceID && d.deviceID.replace(/\./g, '').toUpperCase() === insteonID);
+            if (devIndex === -1) {
+                unmatched++;
+                details.push({ id: insteonID, name, status: 'not found in hub' });
+                continue;
+            }
+            this.insteonJSON.devices[devIndex].name = name;
+            // Set deviceType from model if not already set
+            if (model && !this.insteonJSON.devices[devIndex].deviceType) {
+                const deviceType = modelToType[model.toLowerCase()];
+                if (deviceType) {
+                    this.insteonJSON.devices[devIndex].deviceType = deviceType;
+                }
+            }
+            matched++;
+            details.push({ id: insteonID, name, status: 'matched' });
+        }
+        return { matched, unmatched, details };
+    }
+    parseCSVLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                if (inQuotes && line[i + 1] === '"') {
+                    current += '"';
+                    i++;
+                }
+                else {
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if (ch === ',' && !inQuotes) {
+                result.push(current);
+                current = '';
+            }
+            else {
+                current += ch;
+            }
+        }
+        result.push(current);
+        return result;
     }
     getHubDevices(res, callback) {
         const devices = [];

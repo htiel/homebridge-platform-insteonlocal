@@ -92,6 +92,13 @@ export declare class InsteonUI {
     loadConfig(): void;
     loadInsteonConfig(callback?: any): void;
     getHubInfo(): void;
+    renderImportInsteonConnectPage(res: any): void;
+    processInsteonConnectCSV(csv: string): {
+        matched: number;
+        unmatched: number;
+        details: any[];
+    };
+    parseCSVLine(line: string): string[];
     getHubDevices(res: any, callback: any): void;
     getAllDeviceInfo(deviceID: any, res: any, callback: any): void;
     getDeviceLinks(deviceID: any, callback: any): void;
