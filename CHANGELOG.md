@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.15] - 2026-03-27
+### Fixed
+- **Get All Dev Links progress modal closing after first device**: `getDeviceLinks` was emitting a `close` SSE event on both success and failure, dismissing the modal after every single device instead of waiting for the full run to complete. Removed the spurious `close` emits — only the top-level loop now signals completion.
+- **Get All Dev Links device order**: Devices were processed bottom-to-top (`Array.pop`) instead of top-to-bottom. Changed to `Array.shift` so devices are processed in the same order they appear in the hub device list.
+### Enhanced
+- **Get All Dev Links — missing for-loop closing braces in `setOutletState`**: Two for-loops in the on/off branches of `setOutletState` were each missing two closing braces (a side effect of the earlier promise deadlock fix), causing TypeScript compile errors. Fixed.
+
 ## [0.5.14] - 2026-03-26
 ### Security
 - **Input validation on all Express API routes**: All route parameters (`[id]`, `[targetLevel]`, `[group]`) are now validated before being passed to the Insteon hub. Device IDs must be exactly 6 hexadecimal characters; level must be an integer 0–100; group must be an integer 1–255. Invalid requests are rejected with HTTP 400.
