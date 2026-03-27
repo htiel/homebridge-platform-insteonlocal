@@ -1,6 +1,27 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [0.5.14] - 2026-03-26
+### Security
+- **Input validation on all Express API routes**: All route parameters (`[id]`, `[targetLevel]`, `[group]`) are now validated before being passed to the Insteon hub. Device IDs must be exactly 6 hexadecimal characters; level must be an integer 0–100; group must be an integer 1–255. Invalid requests are rejected with HTTP 400.
+- **Null dereference fixed in `iolinc` and `fan` Express routes**: `/iolinc/:id/relay_on`, `/iolinc/:id/relay_off`, and `/fan/:id/level/:targetLevel` would crash attempting to call methods on `undefined` if the device ID was not registered. Fixed with the same null guard pattern applied to the light routes in 0.5.13.
+- **Hub password no longer visible in InsteonUI**: The hub password field on the Config page was rendered as `type='text'`, making the password visible in the browser and in page source. Changed to `type='password'`.
+- **Hub credentials no longer logged to Homebridge log**: When saving config via the InsteonUI, the full config object (including hub username and password) was written to the Homebridge log via `JSON.stringify(this.config)`. Replaced with a redacted message.
+- **Device ID validation in InsteonUI action routes**: The `removeDevice`, `removeLink`, `removeHubLink`, `beep`, and `getLinks` URL-based routes in the InsteonUI extracted device IDs and link indices directly from the raw URL with no validation. All now validate the device ID against the 6-character hex format and return HTTP 400 on invalid input.
+
+## [0.5.13] - 2026-03-26
+### Fixed
+- **Remote (mini-remote) battery handling**: `remote` device type is now correctly treated as a battery-operated device. Added `StatusLowBattery` characteristic and low battery detection via Insteon `command2 == '03'` broadcast signal, consistent with other battery sensors.
+- **Remote button press handler**: `handleRemoteEvent` was declared but never defined, causing a `TypeError` crash on every button press. Now correctly implemented — routes group/button matching, fires `ProgrammableSwitchEvent` in stateless mode or toggling On/Off in switch mode.
+- **Inverted responder controller logic**: `['11','12','13','14'].indexOf(command1) + 1` evaluated truthy for every command *except* on/off commands (completely inverted). Fixed to `>= 0`.
+- **Null dereference crashes in Express API routes**: `/light/:id/on`, `/light/:id/off`, and `/light/:id/level` routes would crash with `TypeError` if a device ID was not registered or not found in accessories. Added null guard before calling `getStatus`.
+- **Null dereference in responder device lookup**: The event listener's controller-responder loop would crash if a `controllers` device ID was not registered as an accessory. Added null guard with `continue`.
+- **Null dereference in `getGroupMemberStatus`**: Accessing `groupDevice[0]` or `namedDev[0]` without checking for undefined would crash when a group member ID/name was not found in accessories. Added null guards with debug log.
+- **`getSensorStatus` callback crash**: `callback()` was called unconditionally for IOLinc sensor polling, crashing when called without a callback argument. Added `typeof callback === 'function'` guard.
+- **Broken promise deadlock in keypad LED sync**: All 5 occurrences of the keypad LED synchronization loop used `new Promise((resolve, reject) => this.setTargetKeypadBtn.call(this))` where `resolve` was never passed through to the callback, causing an `await` that would never resolve (permanent deadlock/resource leak). Replaced with direct sequential calls.
+- **Duplicate `this.host` assignment**: `this.host = config['host']` was assigned twice consecutively in the platform constructor.
+
 ## [0.5.12] - 2025-12-31
 ### Enhanced
 - Added `override` feature (see README)

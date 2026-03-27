@@ -316,7 +316,7 @@ export class InsteonUI {
                 this.platform.user +
                 '\'></div>';
         const hubPassword =
-                '<div class=\'form-group\'><label for=\'password\'>Password:</label><input type=\'text\' class=\'form-control\' name=\'hubPassword\' value=\'' +
+                '<div class=\'form-group\'><label for=\'password\'>Password:</label><input type=\'password\' class=\'form-control\' name=\'hubPassword\' value=\'' +
                 this.platform.pass +
                 '\'></div>';
         const hubAddress =
@@ -2782,7 +2782,7 @@ export class InsteonUI {
                   });
                 }
               });
-              this.log('Config to save: ' + JSON.stringify(this.config));
+              this.log('Config to save: [credentials redacted]');
               this.saveConfig(res);
             });
             req.on('end', (chunk) => {
@@ -2896,7 +2896,8 @@ export class InsteonUI {
           const url = req.url;
 
           if (url.indexOf('/removeDevice') !== -1) {
-            const deviceToRemove = req.url.replace('/removeDevice', '');
+            const deviceToRemove = req.url.replace('/removeDevice', '').replace(/^\//, '');
+            if (!/^[0-9a-fA-F]{6}$/.test(deviceToRemove)) { res.sendStatus(400); return; }
 
             const devIndex = this.config.platforms[
               this.platformIndex
@@ -2913,6 +2914,7 @@ export class InsteonUI {
             const deviceLink = req.url.replace('/removeLink/', '').split('/');
             const deviceID = deviceLink[0];
             const linkAt = parseInt(deviceLink[1]);
+            if (!/^[0-9a-fA-F]{6}$/.test(deviceID) || isNaN(linkAt)) { res.sendStatus(400); return; }
             this.removeLinkAt(deviceID, linkAt, res);
           }
 
@@ -2920,6 +2922,7 @@ export class InsteonUI {
             const deviceLink = req.url.replace('/removeHubLink/', '').split('/');
             const deviceID = deviceLink[0];
             const linkNumber = parseInt(deviceLink[1]);
+            if (!/^[0-9a-fA-F]{6}$/.test(deviceID) || isNaN(linkNumber)) { res.sendStatus(400); return; }
 
             let linkToDelete = this.hubLinks.filter((link) => {
               return link.number == linkNumber;
@@ -2939,11 +2942,13 @@ export class InsteonUI {
 
           if (url.indexOf('/beep') !== -1) {
             const deviceID = req.url.replace('/beep/', '');
+            if (!/^[0-9a-fA-F]{6}$/.test(deviceID)) { res.sendStatus(400); return; }
             this.beep(deviceID);
           }
 
           if (url.indexOf('/getLinks') !== -1) {
             const deviceID = req.url.replace('/getLinks/', '');
+            if (!/^[0-9a-fA-F]{6}$/.test(deviceID)) { res.sendStatus(400); return; }
             this.selectedDevice = deviceID;
             this.getDeviceLinks(deviceID, (error, links) => {
               if (error) {
