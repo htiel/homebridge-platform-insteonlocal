@@ -2275,7 +2275,8 @@ class InsteonUI {
                     sse.emit('push', { message: `[${completedDevices}/${totalDevices}] Getting info for ${id}...` });
                     this.getAllDeviceInfo(id, res, (error) => {
                         if (error) {
-                            sse.emit('push', { message: `[${completedDevices}/${totalDevices}] ${id} - Timed out (battery device or offline)` });
+                            const errorMsg = typeof error === 'string' ? error : 'Timed out (battery device or offline)';
+                            sse.emit('push', { message: `[${completedDevices}/${totalDevices}] ${id} - ${errorMsg}` });
                         }
                         else {
                             sse.emit('push', { message: `[${completedDevices}/${totalDevices}] ${id} - Done` });
@@ -2967,11 +2968,17 @@ class InsteonUI {
         const devIndex = this.insteonJSON.devices.findIndex((item) => {
             return item.deviceID == deviceID;
         });
+        // Track whether any command gets a real response, to distinguish
+        // "completely offline" from "responded but returned no links"
+        let gotAnyResponse = false;
         this.getDeviceInfo(deviceID, res, (error, response) => {
             if (error) {
                 sse.emit('push', {
                     message: 'Error getting device info for ' + deviceID,
                 });
+            }
+            else {
+                gotAnyResponse = true;
             }
             this.getOpFlags(deviceID, (error, response) => {
                 if (error) {
@@ -2979,8 +2986,14 @@ class InsteonUI {
                         message: 'Error getting operating flags for ' + deviceID,
                     });
                 }
+                else {
+                    gotAnyResponse = true;
+                }
                 this.getDatabaseDelta(deviceID, (error, dbdelta) => {
                     const databaseDelta = dbdelta;
+                    if (!error) {
+                        gotAnyResponse = true;
+                    }
                     let recentDelta;
                     if (typeof this.insteonJSON.devices[devIndex].databaseDelta !==
                         'undefined') {
@@ -2991,6 +3004,7 @@ class InsteonUI {
                     }
                     if (recentDelta == databaseDelta) {
                         sse.emit('push', { message: 'prompt' });
+                        callback(null, null);
                     }
                     else {
                         this.insteonJSON.devices[devIndex].databaseDelta = databaseDelta;
@@ -3000,7 +3014,10 @@ class InsteonUI {
                                 sse.emit('push', {
                                     message: 'Error getting links for ' + deviceID,
                                 });
-                                callback(error, null);
+                                const errMsg = gotAnyResponse
+                                    ? 'No links returned (battery device or sensor)'
+                                    : 'Offline (no device response)';
+                                callback(typeof error === 'string' ? error : errMsg, null);
                             }
                             else {
                                 this.log('Done getting links for ' + deviceID);
@@ -3055,12 +3072,18 @@ class InsteonUI {
         sse.emit('push', { message: 'Getting links for ' + deviceID });
         _getDeviceLinks(deviceID, at, linkArray, (error, response) => {
             this.log('linkArray: ' + util_1.default.inspect(linkArray));
+            if (error) {
+                this.log('Error (timeout) getting links from ' + deviceID);
+                callback('Timed out (no device response)', null);
+                return;
+            }
             linkArray = linkArray.filter((item, index, inputArray) => {
                 return inputArray.indexOf(item) == index;
             });
             if (linkArray.length == 0) {
-                this.log('No links returned from ' + deviceID);
-                callback(true, null);
+                this.log('No links found in ' + deviceID + ' (empty database)');
+                sse.emit('push', { message: 'No links found in ' + deviceID + ' (empty database)' });
+                callback(null, []);
                 return;
             }
             linkArray.forEach((item) => {
@@ -3579,8 +3602,9 @@ class InsteonUI {
 					$('#progressModal .modal-footer').show();
 				} else {
 					var color = '#333';
-					if (message.indexOf('Error') !== -1 || message.indexOf('Timed out') !== -1) { color = '#d9534f'; }
+					if (message.indexOf('Error') !== -1 || message.indexOf('Timed out') !== -1 || message.indexOf('Offline') !== -1) { color = '#d9534f'; }
 					else if (message.indexOf('Done') !== -1 || message.indexOf('loaded') !== -1) { color = '#5cb85c'; }
+					else if (message.indexOf('No links') !== -1 || message.indexOf('battery device') !== -1) { color = '#f0ad4e'; }
 					else if (message.indexOf('Getting') !== -1 || message.indexOf('Loading') !== -1) { color = '#5bc0de'; }
 					body.append('<div style="color:' + color + '">' + message + '</div>');
 					body.scrollTop(body[0].scrollHeight);

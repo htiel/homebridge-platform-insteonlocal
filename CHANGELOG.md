@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.17] - 2026-03-27
+### Fixed
+- **Get All Dev Links — devices with 0 links incorrectly reported as timed out**: `getDeviceLinks` was treating an empty link database (device responded but has no links) the same as a hub communication timeout. Both produced `callback(true, null)` and showed red "Timed out (battery device or offline)". Fixed by checking the `error` argument in the outer callback first: a hub communication error now propagates `'Timed out (no device response)'`; a successful response with 0 links emits "No links found in XXX (empty database)" and calls `callback(null, [])` (success).
+- **Get All Dev Links — queue hangs when device links are up to date**: When `getDatabaseDelta` returned the same value as the stored delta (links unchanged), `getAllDeviceInfo` emitted a `'prompt'` SSE event but never called its callback, leaving `_getAllDevLinks` waiting indefinitely for the next device. Added the missing `callback(null, null)` after the prompt emit.
+- **Get All Dev Links — all failures showed identical "battery device or offline" message**: The per-device error message in `_getAllDevLinks` was hardcoded regardless of the actual failure. Error messages are now passed as descriptive strings through the callback chain, so the final status line reflects the real cause (e.g. "Timed out (no device response)").
+
+## [0.5.17] - 2026-03-27
+### Fixed
+- **Get All Dev Links — all failures showed identical "battery device or offline" message**: Every device that didn't return links was reported as "Timed out (battery device or offline)" regardless of actual cause. Three distinct failure modes are now reported separately:
+  - **"Offline (no device response)"** — device failed to respond to op flags, database delta, AND link read (e.g. truly powered-off or unreachable devices). Shown in red.
+  - **"No links returned (battery device or sensor)"** — device responded to at least one command (op flags or delta) but the link database read returned empty. Typical for battery-powered sensors and some remotes that don't expose a link database. Shown in orange.
+  - **"Done"** — device responded and links were read successfully (existing behaviour). Shown in green.
+- **Get All Dev Links — devices with 0 links incorrectly reported as timed out**: `getDeviceLinks` was treating an empty link database (device responded but has no links) the same as a hub communication timeout — both called `callback(true, null)`. Now checks the error argument first: a hub timeout propagates the error; a successful response with 0 links emits "No links found" and calls `callback(null, [])` (success, treated as Done).
+- **Get All Dev Links — queue hangs when device links are up to date**: When `getDatabaseDelta` matched the stored delta (links unchanged), `getAllDeviceInfo` emitted a `prompt` SSE event but never called its callback, leaving the queue waiting indefinitely for the next device. Added the missing `callback(null, null)`.
+### Enhanced
+- **Get All Dev Links progress log — warning color for no-links devices**: "No links" and "battery device" messages now appear in orange (`#f0ad4e`) in the progress log instead of the default dark colour, making it easier to distinguish warnings from errors (red) and successes (green).
+
 ## [0.5.16] - 2026-03-28
 ### Added
 - **Import Names from Insteon Connect**: New option in the Device Action menu lets you paste a CSV exported from connect.insteon.com and apply device names (and device types inferred from the Model column) to all matched hub devices in one step. The import page renders a textarea form; on submit it parses the CSV, matches by Insteon ID (period-insensitive), updates names and types, and writes the result atomically (temp file then rename) to avoid corrupting insteon.json on failure. A results table shows each matched/unmatched row.
