@@ -4149,6 +4149,12 @@ export class InsteonUI {
 
       theDevice = theDevice[0];
 
+      if (!theDevice) {
+        this.log('generateDeviceConfig: device ' + deviceID + ' not found in hubDevices, skipping');
+        callback(null, null, res);
+        return;
+      }
+
       // Build device config from whatever info is available — never fail,
       // just omit deviceType if we can't determine it.
       const _buildConf = (deviceType?: string) => {
